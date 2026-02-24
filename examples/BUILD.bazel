@@ -8,7 +8,7 @@ cc_test(
         "@platforms//os:windows": ["/openmp"],
         "//conditions:default": ["-fopenmp"],
     }),
-    deps = ["@omp"],
+    deps = ["@omp_prebuilt//:omp"],
 )
 
 # e2e: atomic counter across threads
@@ -19,7 +19,7 @@ cc_test(
         "@platforms//os:windows": ["/openmp"],
         "//conditions:default": ["-fopenmp"],
     }),
-    deps = ["@omp"],
+    deps = ["@omp_prebuilt//:omp"],
     env = {"OMP_NUM_THREADS": "4"},
 )
 
@@ -27,5 +27,5 @@ cc_test(
 cc_test(
     name = "omp_api",
     srcs = ["omp_api.c"],
-    deps = ["@omp"],
+    deps = ["@omp_prebuilt//:omp"],
 )

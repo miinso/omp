@@ -1,0 +1,83 @@
+---
+name: Auto Update LLVM
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      needs_update: ${{ steps.check.outputs.needs_update }}
+      latest_version: ${{ steps.check.outputs.latest_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for LLVM updates
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_omp_updates.py \
+            --versions-file versions.env \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Create update PR
+        if: steps.check.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.check.outputs.latest_version }}
+          CURRENT: ${{ steps.check.outputs.current_version }}
+          MINOR: ${{ steps.check.outputs.tracked_minor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/llvm-${LATEST}"
+
+          # check if PR already exists
+          existing="$(gh pr list --head "$branch" --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            echo "PR #${existing} already exists for $branch, skipping"
+            exit 0
+          fi
+
+          git checkout -B "$branch" origin/master
+
+          python3 scripts/check_omp_updates.py \
+            --versions-file versions.env \
+            --write
+
+          git add versions.env
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "chore: bump LLVM ${MINOR} to ${LATEST}"
+
+          git push -u origin "$branch"
+
+          gh pr create \
+            --title "chore: bump LLVM ${MINOR} to ${LATEST}" \
+            --body "$(cat <<EOF
+          Automated LLVM update.
+
+          - Tracked minor: \`${MINOR}\`
+          - Previous: \`${CURRENT}\`
+          - Latest: \`${LATEST}\`
+
+          After merge, dispatch release.yml to build and publish:
+          \`\`\`
+          gh workflow run release.yml -f version=${LATEST} -f draft=true
+          \`\`\`
+          EOF
+          )"
+
+          # try auto-merge if branch protection is configured
+          pr_number="$(gh pr list --head "$branch" --json number -q '.[0].number')"
+          gh pr merge "$pr_number" --auto --squash 2>/dev/null || \
+            echo "::warning::auto-merge not available (needs branch protection rules)"
