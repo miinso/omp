@@ -1,0 +1,24 @@
+---
+name: CI
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # quick smoke test on linux only
+  build-linux-x86_64:
+    uses: ./.github/workflows/_build-platform.yml
+    with:
+      platform_id: linux-x86_64-ci
+      runner: ubuntu-latest
+      target_triple: x86_64-unknown-linux-gnu
+      artifact_format: tar.gz
+      upload_artifact: false
+      use_docker: true
+      timeout_minutes: 30

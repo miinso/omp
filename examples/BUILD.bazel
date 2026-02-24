@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+# basic: parallel hello world
+cc_test(
+    name = "hello_omp",
+    srcs = ["hello_omp.c"],
+    copts = select({
+        "@platforms//os:windows": ["/openmp"],
+        "//conditions:default": ["-fopenmp"],
+    }),
+    deps = ["@omp"],
+)
+
+# e2e: atomic counter across threads
+cc_test(
+    name = "atomic_counter",
+    srcs = ["atomic_counter.c"],
+    copts = select({
+        "@platforms//os:windows": ["/openmp"],
+        "//conditions:default": ["-fopenmp"],
+    }),
+    deps = ["@omp"],
+    env = {"OMP_NUM_THREADS": "4"},
+)
+
+# sanity: omp API queries (no parallel region)
+cc_test(
+    name = "omp_api",
+    srcs = ["omp_api.c"],
+    deps = ["@omp"],
+)

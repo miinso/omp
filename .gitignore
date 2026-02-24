@@ -1,0 +1,11 @@
+build/
+build-*/
+install/
+install-*/
+llvm-project/
+*.tar.gz
+*.zip
+__pycache__/
+.cache/
+bazel-*/
+MODULE.bazel.lock

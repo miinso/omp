@@ -1,0 +1,417 @@
+---
+name: _build-platform
+
+on:
+  workflow_call:
+    inputs:
+      platform_id:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      target_triple:
+        required: true
+        type: string
+      artifact_format:
+        required: true
+        type: string
+      timeout_minutes:
+        required: false
+        type: number
+        default: 60
+      upload_artifact:
+        required: false
+        type: boolean
+        default: true
+      use_docker:
+        required: false
+        type: boolean
+        default: false
+      needs_msvc:
+        required: false
+        type: boolean
+        default: false
+      enable_cross_os_llvm_cache:
+        required: false
+        type: boolean
+        default: false
+      python_cmd:
+        required: false
+        type: string
+        default: python3
+      artifact_version:
+        required: false
+        type: string
+        default: ""
+      llvm_version_override:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  build:
+    name: build-${{ inputs.platform_id }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      TARGET_TRIPLE: ${{ inputs.target_triple }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load version configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+
+          LLVM_VERSION_EFFECTIVE="${LLVM_VERSION:-}"
+          if [ -n "${{ inputs.llvm_version_override }}" ]; then
+            LLVM_VERSION_EFFECTIVE="${{ inputs.llvm_version_override }}"
+          fi
+
+          EFFECTIVE_VERSION="$LLVM_VERSION_EFFECTIVE"
+          if [ -n "${{ inputs.artifact_version }}" ]; then
+            EFFECTIVE_VERSION="${{ inputs.artifact_version }}"
+          fi
+
+          echo "LLVM_VERSION=$LLVM_VERSION_EFFECTIVE" >> "$GITHUB_ENV"
+          echo "EFFECTIVE_VERSION=$EFFECTIVE_VERSION" >> "$GITHUB_ENV"
+          echo "SCCACHE_VERSION=$SCCACHE_VERSION" >> "$GITHUB_ENV"
+          echo "NINJA_VERSION=$NINJA_VERSION" >> "$GITHUB_ENV"
+
+      - name: Show system information (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          echo "CPU cores: $(getconf _NPROCESSORS_ONLN || true)"
+          echo ""
+          echo "=== Memory Information ==="
+          free -h || true
+          echo ""
+          echo "=== Disk Information ==="
+          df -h
+
+      - name: Show system information (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Write-Host "=== System Information ==="
+          Write-Host "CPU cores: $([Environment]::ProcessorCount)"
+          Write-Host "`n=== Memory Information ==="
+          $memory = Get-CimInstance -ClassName Win32_ComputerSystem
+          Write-Host "Total Physical Memory: $([math]::Round($memory.TotalPhysicalMemory / 1GB, 2)) GB"
+
+      - name: Setup MSVC
+        if: ${{ inputs.needs_msvc }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: ${{ env.SCCACHE_VERSION }}
+
+      - name: Restore LLVM source cache
+        id: cache-llvm
+        uses: actions/cache/restore@v4
+        with:
+          path: llvm-project
+          key: llvm-source-${{ env.LLVM_VERSION }}-omp
+          enableCrossOsArchive: ${{ inputs.enable_cross_os_llvm_cache }}
+
+      - name: Clone LLVM source
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LLVM_TAG="llvmorg-${LLVM_VERSION}"
+          echo "cloning llvm-project @ ${LLVM_TAG}"
+          git clone --depth=1 --branch "$LLVM_TAG" \
+            https://github.com/llvm/llvm-project.git llvm-project
+
+      - name: Save LLVM source cache
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llvm-project
+          key: llvm-source-${{ env.LLVM_VERSION }}-omp
+          enableCrossOsArchive: ${{ inputs.enable_cross_os_llvm_cache }}
+
+      - name: Set up Docker Buildx
+        if: ${{ inputs.use_docker }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        if: ${{ inputs.use_docker }}
+        shell: bash
+        run: docker build -t omp-builder:latest -f docker/Dockerfile .
+
+      # two-stage linux build:
+      #   stage 1 (alpine/musl): static lib (.a) — portable across all libc
+      #   stage 2 (host glibc):  shared lib (.so) — works on all glibc distros
+      # both use -S openmp (standalone). -S runtimes needs full LLVM.
+
+      - name: "Stage 1: Build static lib + headers (Alpine/musl Docker)"
+        if: ${{ inputs.use_docker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}:/work" \
+            -v "${HOME}/.cache/sccache:/cache/sccache" \
+            -e SCCACHE_DIR=/cache/sccache \
+            -e ACTIONS_CACHE_SERVICE_V2="${ACTIONS_CACHE_SERVICE_V2}" \
+            -e ACTIONS_RESULTS_URL="${ACTIONS_RESULTS_URL}" \
+            -e ACTIONS_RUNTIME_TOKEN="${ACTIONS_RUNTIME_TOKEN}" \
+            -e SCCACHE_GHA_ENABLED="true" \
+            omp-builder:latest \
+            /bin/bash -c '
+              set -euo pipefail
+
+              mkdir -p /work/build-musl /work/install
+
+              cmake -G Ninja \
+                -S /work/llvm-project/openmp \
+                -B /work/build-musl \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+                -DCMAKE_INSTALL_PREFIX=/work/install \
+                -DLIBOMP_OMPT_SUPPORT=ON \
+                -DLIBOMP_INSTALL_ALIASES=ON \
+                -DLIBOMP_USE_ITT_NOTIFY=ON \
+                -DLIBOMP_USE_VERSION_SYMBOLS=ON \
+                -DLIBOMP_OMPD_SUPPORT=OFF \
+                -DLIBOMP_ENABLE_ASSERTIONS=OFF \
+                -DLIBOMP_STATS=OFF \
+                -DLIBOMP_OMPT_DEBUG=OFF \
+                -DLIBOMP_USE_DEBUGGER=OFF \
+                -DLIBOMP_OMPX_TASKGRAPH=OFF \
+                -DLIBOMP_FORTRAN_MODULES=OFF \
+                -DLIBOMP_USE_HWLOC=OFF \
+                -DOPENMP_ENABLE_LIBOMPTARGET=OFF \
+                -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+
+              ninja -C /work/build-musl
+              ninja -C /work/build-musl install
+
+              # create static lib from .o files (musl — works with any libc)
+              OBJ_DIR=/work/build-musl/runtime/src/CMakeFiles/omp.dir
+              ar rcs /work/install/lib/libomp.a \
+                "$OBJ_DIR"/*.cpp.o "$OBJ_DIR"/*.S.o \
+                "$OBJ_DIR"/thirdparty/ittnotify/*.cpp.o 2>/dev/null || \
+              ar rcs /work/install/lib/libomp.a "$OBJ_DIR"/*.cpp.o "$OBJ_DIR"/*.S.o
+
+              # remove musl-linked .so (will be replaced by glibc build)
+              rm -f /work/install/lib/libomp.so
+
+              sccache --show-stats || true
+              chown -R "$(stat -c %u:%g /work)" /work/build-musl /work/install || true
+            '
+
+      - name: "Stage 2: Build shared lib (host glibc)"
+        if: ${{ inputs.use_docker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build-glibc
+
+          cmake -G Ninja \
+            -S llvm-project/openmp \
+            -B build-glibc \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -DCMAKE_INSTALL_PREFIX="${PWD}/install" \
+            -DLIBOMP_OMPT_SUPPORT=ON \
+            -DLIBOMP_INSTALL_ALIASES=ON \
+            -DLIBOMP_USE_ITT_NOTIFY=ON \
+            -DLIBOMP_USE_VERSION_SYMBOLS=ON \
+            -DLIBOMP_OMPD_SUPPORT=OFF \
+            -DLIBOMP_ENABLE_ASSERTIONS=OFF \
+            -DLIBOMP_STATS=OFF \
+            -DLIBOMP_OMPT_DEBUG=OFF \
+            -DLIBOMP_USE_DEBUGGER=OFF \
+            -DLIBOMP_OMPX_TASKGRAPH=OFF \
+            -DLIBOMP_FORTRAN_MODULES=OFF \
+            -DLIBOMP_USE_HWLOC=OFF \
+            -DOPENMP_ENABLE_LIBOMPTARGET=OFF \
+            -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+
+          ninja -C build-glibc
+
+          # copy glibc-linked .so + aliases into install (alongside musl static .a)
+          cp -P build-glibc/runtime/src/libomp.so install/lib/
+          # restore alias symlinks pointing to glibc .so
+          cd install/lib
+          ln -sf libomp.so libgomp.so 2>/dev/null || true
+          ln -sf libomp.so libiomp5.so 2>/dev/null || true
+          cd -
+
+      - name: Configure, build and install (Host - Unix)
+        if: ${{ !inputs.use_docker && runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build install
+
+          CMAKE_ARGS=(
+            -G Ninja
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+            -DCMAKE_INSTALL_PREFIX="${PWD}/install"
+            -DLIBOMP_OMPT_SUPPORT=ON
+            -DLIBOMP_INSTALL_ALIASES=ON
+            -DLIBOMP_USE_ITT_NOTIFY=ON
+            -DLIBOMP_OMPD_SUPPORT=OFF
+            -DLIBOMP_ENABLE_ASSERTIONS=OFF
+            -DLIBOMP_STATS=OFF
+            -DLIBOMP_OMPT_DEBUG=OFF
+            -DLIBOMP_USE_DEBUGGER=OFF
+            -DLIBOMP_OMPX_TASKGRAPH=OFF
+            -DLIBOMP_FORTRAN_MODULES=OFF
+            -DLIBOMP_USE_HWLOC=OFF
+            -DOPENMP_ENABLE_LIBOMPTARGET=OFF
+            -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+          )
+
+          # version_symbols only on linux (ELF)
+          if [ "$(uname)" = "Linux" ]; then
+            CMAKE_ARGS+=(-DLIBOMP_USE_VERSION_SYMBOLS=ON)
+          else
+            CMAKE_ARGS+=(-DLIBOMP_USE_VERSION_SYMBOLS=OFF)
+          fi
+
+          cmake "${CMAKE_ARGS[@]}" -S llvm-project/openmp -B build
+
+          ninja -C build
+          ninja -C build install
+
+          # create static lib from shared builds object files
+          OBJ_DIR=build/runtime/src/CMakeFiles/omp.dir
+          ar rcs install/lib/libomp.a \
+            "$OBJ_DIR"/*.cpp.o "$OBJ_DIR"/*.S.o \
+            "$OBJ_DIR"/thirdparty/ittnotify/*.cpp.o 2>/dev/null || \
+          ar rcs install/lib/libomp.a "$OBJ_DIR"/*.cpp.o "$OBJ_DIR"/*.S.o
+
+      - name: Configure, build and install (Host - Windows)
+        if: ${{ !inputs.use_docker && runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build install
+
+          # windows builds shared by default, producing libomp.dll + libomp.dll.lib
+          cmake -G Ninja \
+            -S llvm-project/openmp \
+            -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=cl \
+            -DCMAKE_CXX_COMPILER=cl \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_INSTALL_PREFIX="${PWD}/install" \
+            -DLIBOMP_OMPT_SUPPORT=OFF \
+            -DLIBOMP_INSTALL_ALIASES=OFF \
+            -DLIBOMP_USE_ITT_NOTIFY=ON \
+            -DLIBOMP_USE_VERSION_SYMBOLS=OFF \
+            -DLIBOMP_OMPD_SUPPORT=OFF \
+            -DLIBOMP_ENABLE_ASSERTIONS=OFF \
+            -DLIBOMP_STATS=OFF \
+            -DLIBOMP_OMPT_DEBUG=OFF \
+            -DLIBOMP_USE_DEBUGGER=OFF \
+            -DLIBOMP_OMPX_TASKGRAPH=OFF \
+            -DLIBOMP_FORTRAN_MODULES=OFF \
+            -DLIBOMP_USE_HWLOC=OFF \
+            -DOPENMP_ENABLE_LIBOMPTARGET=OFF \
+            -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+
+          ninja -C build
+          ninja -C build install
+
+      - name: Collect sccache stats
+        if: ${{ !inputs.use_docker }}
+        shell: bash
+        run: sccache --show-stats || true
+
+      # docker builds: test static lib inside Alpine, test shared lib on glibc host
+      - name: Test libomp (Alpine Docker — static lib validation)
+        if: ${{ inputs.use_docker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${PWD}:/work" omp-builder:latest \
+            python3 /work/scripts/test-omp.py --install-dir /work/install
+
+      - name: Test libomp (host glibc — shared lib validation)
+        if: ${{ inputs.use_docker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test-omp.py --install-dir ./install
+
+      # host builds: skip compile+run on windows (no cc) and macos (apple clang lacks -fopenmp)
+      - name: Test libomp install (Host)
+        if: ${{ !inputs.use_docker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SKIP_RUN=""
+          if [ "${RUNNER_OS}" = "Windows" ] || [ "${RUNNER_OS}" = "macOS" ]; then
+            SKIP_RUN="--skip-run"
+          fi
+          "${{ inputs.python_cmd }}" scripts/test-omp.py \
+            --install-dir ./install \
+            $SKIP_RUN
+
+      - name: Copy LICENSE into install
+        shell: bash
+        run: |
+          if [ -f llvm-project/openmp/LICENSE.TXT ]; then
+            cp llvm-project/openmp/LICENSE.TXT install/LICENSE.TXT
+          elif [ -f llvm-project/LICENSE.TXT ]; then
+            cp llvm-project/LICENSE.TXT install/LICENSE.TXT
+          fi
+
+      - name: Package binaries (Unix)
+        if: ${{ inputs.upload_artifact && runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="omp-${EFFECTIVE_VERSION}"
+          mv install "$package_root"
+          package_file="${package_root}-${TARGET_TRIPLE}.${{ inputs.artifact_format }}"
+          tar -czf "$package_file" "$package_root"
+          echo "PACKAGE_FILE=$package_file" >> "$GITHUB_ENV"
+
+      - name: Package binaries (Windows)
+        if: ${{ inputs.upload_artifact && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $packageRoot = "omp-${{ env.EFFECTIVE_VERSION }}"
+          Rename-Item -Path install -NewName $packageRoot
+          $packageFile = "$packageRoot-${{ inputs.target_triple }}.${{ inputs.artifact_format }}"
+          Compress-Archive -Path $packageRoot -DestinationPath $packageFile -Force
+          "PACKAGE_FILE=$packageFile" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload package artifact
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: omp-${{ env.EFFECTIVE_VERSION }}-${{ inputs.target_triple }}
+          path: ${{ env.PACKAGE_FILE }}
+          retention-days: 30
