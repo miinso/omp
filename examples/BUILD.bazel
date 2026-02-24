@@ -1,25 +1,20 @@
+load("@omp//:defs.bzl", "OMP_COPTS")
 load("@rules_cc//cc:defs.bzl", "cc_test")
 
 # basic: parallel hello world
 cc_test(
     name = "hello_omp",
     srcs = ["hello_omp.c"],
-    copts = select({
-        "@platforms//os:windows": ["/openmp"],
-        "//conditions:default": ["-fopenmp"],
-    }),
-    deps = ["@omp_prebuilt//:omp"],
+    copts = OMP_COPTS,
+    deps = ["@libomp//:omp"],
 )
 
 # e2e: atomic counter across threads
 cc_test(
     name = "atomic_counter",
     srcs = ["atomic_counter.c"],
-    copts = select({
-        "@platforms//os:windows": ["/openmp"],
-        "//conditions:default": ["-fopenmp"],
-    }),
-    deps = ["@omp_prebuilt//:omp"],
+    copts = OMP_COPTS,
+    deps = ["@libomp//:omp"],
     env = {"OMP_NUM_THREADS": "4"},
 )
 
@@ -27,5 +22,23 @@ cc_test(
 cc_test(
     name = "omp_api",
     srcs = ["omp_api.c"],
-    deps = ["@omp_prebuilt//:omp"],
+    deps = ["@libomp//:omp"],
+)
+
+# link mode: static (libomp.a)
+cc_test(
+    name = "hello_omp_static",
+    srcs = ["hello_omp.c"],
+    copts = OMP_COPTS,
+    linkstatic = True,
+    deps = ["@libomp//:omp"],
+)
+
+# link mode: dynamic (libomp.dylib / libomp.so)
+cc_test(
+    name = "hello_omp_dynamic",
+    srcs = ["hello_omp.c"],
+    copts = OMP_COPTS,
+    linkstatic = False,
+    deps = ["@libomp//:omp"],
 )

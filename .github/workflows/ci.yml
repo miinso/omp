@@ -11,7 +11,6 @@ permissions:
   actions: read
 
 jobs:
-  # quick smoke test on linux only
   build-linux-x86_64:
     uses: ./.github/workflows/_build-platform.yml
     with:
@@ -21,4 +20,26 @@ jobs:
       artifact_format: tar.gz
       upload_artifact: false
       use_docker: true
+      timeout_minutes: 30
+
+  build-macos-x86_64:
+    uses: ./.github/workflows/_build-platform.yml
+    with:
+      platform_id: macos-x86_64-ci
+      runner: macos-15-intel
+      target_triple: x86_64-apple-darwin
+      artifact_format: tar.gz
+      upload_artifact: false
+      use_docker: false
+      timeout_minutes: 30
+
+  build-macos-arm64:
+    uses: ./.github/workflows/_build-platform.yml
+    with:
+      platform_id: macos-arm64-ci
+      runner: macos-15
+      target_triple: arm64-apple-darwin
+      artifact_format: tar.gz
+      upload_artifact: false
+      use_docker: false
       timeout_minutes: 30

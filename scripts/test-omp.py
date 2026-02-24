@@ -110,9 +110,15 @@ def compile_and_run(
             ]
         else:
             exe = Path(tmpdir) / "test_omp"
+            # Apple Clang's driver rejects -fopenmp but cc1 has the
+            # OpenMP lowering code; -Xclang -fopenmp bypasses the driver.
+            if sys.platform == "darwin":
+                omp_flags = ["-Xclang", "-fopenmp"]
+            else:
+                omp_flags = ["-fopenmp"]
             cmd = [
                 compiler,
-                "-fopenmp",
+                *omp_flags,
                 f"-I{include_dir}",
                 str(src),
                 "-o",
@@ -138,6 +144,8 @@ def compile_and_run(
         if is_windows:
             bin_dir = install_dir / "bin"
             env["PATH"] = str(bin_dir) + ";" + str(lib_dir) + ";" + env.get("PATH", "")
+        elif sys.platform == "darwin":
+            env["DYLD_LIBRARY_PATH"] = str(lib_dir)
         else:
             env["LD_LIBRARY_PATH"] = str(lib_dir)
 

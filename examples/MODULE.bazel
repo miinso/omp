@@ -1,5 +1,8 @@
+"""Example programs demonstrating prebuilt libomp usage."""
+
 module(name = "omp_examples", version = "0.0.0")
 
+bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_cc", version = "0.2.4")
 bazel_dep(name = "omp", version = "0.0.0")
 
@@ -7,5 +10,5 @@ bazel_dep(name = "omp", version = "0.0.0")
 local_path_override(module_name = "omp", path = "..")
 
 # download prebuilt libomp for this platform
-omp_ext = use_extension("@omp//:extensions.bzl", "omp")
-use_repo(omp_ext, "omp_prebuilt")
+omp = use_extension("@omp//:extensions.bzl", "omp")
+use_repo(omp, "libomp")

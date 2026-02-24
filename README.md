@@ -41,18 +41,27 @@ omp-{version}-{triple}/
 
 ```starlark
 # MODULE.bazel
-bazel_dep(name = "omp", version = "0.0.0")
+bazel_dep(name = "omp", version = "21.1.8")
+
+omp = use_extension("@omp//:extensions.bzl", "omp")
+use_repo(omp, "libomp")
 ```
 
 ```starlark
 # BUILD.bazel
+load("@omp//:defs.bzl", "OMP_COPTS")
+
 cc_binary(
     name = "my_app",
     srcs = ["main.c"],
-    copts = ["-fopenmp"],
-    deps = ["@omp"],
+    copts = OMP_COPTS,
+    deps = ["@libomp//:omp"],
 )
 ```
+
+`OMP_COPTS` handles platform differences automatically (Linux: `-fopenmp`,
+macOS: `-Xclang -fopenmp` to bypass Apple Clang's driver restriction,
+Windows: `/openmp`).
 
 See `examples/` for test targets.
 

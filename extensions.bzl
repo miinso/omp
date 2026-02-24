@@ -6,11 +6,11 @@ _DEFAULT_VERSION = "21.1.8"
 
 # sha256 checksums for the default version
 _DEFAULT_SHA256 = {
-    "aarch64-unknown-linux-gnu": "3cd762ec9a5420203423db158eb6d5dca873a694b659ba735f714e4f6b4d7d5e",
-    "arm64-apple-darwin": "b41bebb1669d8871140d4b7bebe9075e244d9200b21ffbdd65ae69fc218abcb6",
-    "x86_64-apple-darwin": "69ef1633dbbaf01cf73ce306ebaf8e49cc840fa0ed7f3383df0d761a294ecbf2",
-    "x86_64-pc-windows-msvc": "b75913ad8673382cc4c9dffa54b96e566278ea5ed2961dac8c0821188d2967f2",
-    "x86_64-unknown-linux-gnu": "9390a51b66a4511020a5c11b5e48c617dc50754527bfd7dfb5cffd8cfabd6dd8",
+    "aarch64-unknown-linux-gnu": "d64c6fd4d4f15906bfd2b38960e33f7d8dfd0428c93125d6826e9398111e2f01",
+    "arm64-apple-darwin": "20bf7964a290b3a9cac48f3f940c64176e40ab14a41c83adfade159a9132eb9a",
+    "x86_64-apple-darwin": "e71c4aa6d5c24488a4177a51f1e5e2bb936d6f105db9eb36473991237df3b6d9",
+    "x86_64-pc-windows-msvc": "48b191b99e91445afe052822ad9cce968e5f6ce6949406092fb4886367a1161b",
+    "x86_64-unknown-linux-gnu": "0928dfef5d30ea77e37bca80b9b1c01ffb08dde1450f675170bebce853f7691f",
 }
 
 _version_tag = tag_class(attrs = {
@@ -30,7 +30,7 @@ def _omp_impl(module_ctx):
                 sha256 = dict(tag.sha256)
 
     omp_repository(
-        name = "omp_prebuilt",
+        name = "libomp",
         version = version,
         sha256 = sha256,
     )

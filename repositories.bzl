@@ -18,20 +18,20 @@ load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
 
 cc_import(
     name = "omp_import",
-    static_library = select({{
+    static_library = select({
         "@platforms//os:windows": None,
         "//conditions:default": "lib/libomp.a",
-    }}),
-    shared_library = select({{
+    }),
+    shared_library = select({
         "@platforms//os:linux": "lib/libomp.so",
         "@platforms//os:macos": "lib/libomp.dylib",
         "@platforms//os:windows": "bin/libomp.dll",
         "//conditions:default": None,
-    }}),
-    interface_library = select({{
+    }),
+    interface_library = select({
         "@platforms//os:windows": "lib/libomp.lib",
         "//conditions:default": None,
-    }}),
+    }),
     hdrs = glob(["include/*.h"]),
     visibility = ["//visibility:public"],
 )

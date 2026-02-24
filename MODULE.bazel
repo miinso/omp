@@ -2,11 +2,3 @@ module(name = "omp", version = "21.1.8")
 
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_cc", version = "0.2.4")
-
-# consumers use this extension to download prebuilt libomp for their platform:
-#   omp_ext = use_extension("@omp//:extensions.bzl", "omp")
-#   use_repo(omp_ext, "omp_prebuilt")
-# then: deps = ["@omp_prebuilt//:omp"]
-#
-# to override version or checksums:
-#   omp_ext.version(version = "21.1.8", sha256 = {...})

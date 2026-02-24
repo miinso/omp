@@ -387,14 +387,15 @@ jobs:
           docker run --rm -v "${PWD}:/work" omp-glibc:latest \
             python3 /work/scripts/test-omp.py --install-dir /work/install
 
-      # host builds: skip compile+run on windows (no cc) and macos (apple clang lacks -fopenmp)
+      # host builds: skip compile+run on windows (no cc);
+      # macOS uses -Xclang -fopenmp to bypass Apple Clang's driver restriction.
       - name: Test libomp install (Host)
         if: ${{ !inputs.use_docker }}
         shell: bash
         run: |
           set -euo pipefail
           SKIP_RUN=""
-          if [ "${RUNNER_OS}" = "Windows" ] || [ "${RUNNER_OS}" = "macOS" ]; then
+          if [ "${RUNNER_OS}" = "Windows" ]; then
             SKIP_RUN="--skip-run"
           fi
           "${{ inputs.python_cmd }}" scripts/test-omp.py \
