@@ -11,7 +11,8 @@ RUN apk add --no-cache \
     curl \
     tar \
     xz \
-    linux-headers
+    linux-headers && \
+    ln -s /usr/lib/ninja-build/bin/ninja /usr/local/bin/ninja
 
 # sccache
 ARG SCCACHE_VERSION=v0.12.0

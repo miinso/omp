@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """validate libomp install: headers, libs, compile+link+run test."""
 
-from __future__ import annotations
-
 import argparse
 import os
 import platform
@@ -86,7 +84,7 @@ def check_libs(lib_dir: Path, is_windows: bool) -> bool:
 
 
 def compile_and_run(
-    install_dir: Path, is_windows: bool, compiler: str | None
+    install_dir, is_windows, compiler=None
 ) -> bool:
     include_dir = install_dir / "include"
     lib_dir = install_dir / "lib"
@@ -125,7 +123,7 @@ def compile_and_run(
             ]
 
         print(f"  compile: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         if result.returncode != 0:
             print(f"FAIL: compilation failed\n{result.stderr}")
             return False
@@ -145,7 +143,7 @@ def compile_and_run(
 
         print(f"  run: {exe}")
         result = subprocess.run(
-            [str(exe)], capture_output=True, text=True, env=env, timeout=30
+            [str(exe)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, env=env, timeout=30
         )
         if result.returncode != 0:
             print(f"FAIL: execution failed (rc={result.returncode})\n{result.stderr}")

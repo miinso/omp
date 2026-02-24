@@ -149,14 +149,19 @@ jobs:
         if: ${{ inputs.use_docker }}
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: Build Docker images
         if: ${{ inputs.use_docker }}
         shell: bash
-        run: docker build -t omp-builder:latest -f docker/Dockerfile .
+        run: |
+          docker build -t omp-musl:latest -f docker/Dockerfile .
+          ARCH=$(uname -m)
+          docker build -t omp-glibc:latest \
+            --build-arg MANYLINUX_ARCH="${ARCH}" \
+            -f docker/Dockerfile.glibc .
 
       # two-stage linux build:
       #   stage 1 (alpine/musl): static lib (.a) — portable across all libc
-      #   stage 2 (host glibc):  shared lib (.so) — works on all glibc distros
+      #   stage 2 (manylinux2014/glibc 2.17): shared lib (.so) — works on all glibc distros
       # both use -S openmp (standalone). -S runtimes needs full LLVM.
 
       - name: "Stage 1: Build static lib + headers (Alpine/musl Docker)"
@@ -172,7 +177,7 @@ jobs:
             -e ACTIONS_RESULTS_URL="${ACTIONS_RESULTS_URL}" \
             -e ACTIONS_RUNTIME_TOKEN="${ACTIONS_RUNTIME_TOKEN}" \
             -e SCCACHE_GHA_ENABLED="true" \
-            omp-builder:latest \
+            omp-musl:latest \
             /bin/bash -c '
               set -euo pipefail
 
@@ -213,52 +218,77 @@ jobs:
                 "$OBJ_DIR"/thirdparty/ittnotify/*.cpp.o 2>/dev/null || \
               ar rcs /work/install/lib/libomp.a "$OBJ_DIR"/*.cpp.o "$OBJ_DIR"/*.S.o
 
-              # remove musl-linked .so (will be replaced by glibc build)
+              # remove musl-linked .so + symlinks (will be replaced by glibc build)
               rm -f /work/install/lib/libomp.so
+              rm -f /work/install/lib/libgomp.so /work/install/lib/libgomp.so.1
+              rm -f /work/install/lib/libiomp5.so
 
               sccache --show-stats || true
               chown -R "$(stat -c %u:%g /work)" /work/build-musl /work/install || true
             '
 
-      - name: "Stage 2: Build shared lib (host glibc)"
+      # test static lib inside Alpine before Stage 2 adds the glibc .so
+      - name: Test libomp (Alpine Docker — static lib validation)
         if: ${{ inputs.use_docker }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p build-glibc
+          docker run --rm -v "${PWD}:/work" omp-musl:latest \
+            python3 /work/scripts/test-omp.py --install-dir /work/install
 
-          cmake -G Ninja \
-            -S llvm-project/openmp \
-            -B build-glibc \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
-            -DCMAKE_INSTALL_PREFIX="${PWD}/install" \
-            -DLIBOMP_OMPT_SUPPORT=ON \
-            -DLIBOMP_INSTALL_ALIASES=ON \
-            -DLIBOMP_USE_ITT_NOTIFY=ON \
-            -DLIBOMP_USE_VERSION_SYMBOLS=ON \
-            -DLIBOMP_OMPD_SUPPORT=OFF \
-            -DLIBOMP_ENABLE_ASSERTIONS=OFF \
-            -DLIBOMP_STATS=OFF \
-            -DLIBOMP_OMPT_DEBUG=OFF \
-            -DLIBOMP_USE_DEBUGGER=OFF \
-            -DLIBOMP_OMPX_TASKGRAPH=OFF \
-            -DLIBOMP_FORTRAN_MODULES=OFF \
-            -DLIBOMP_USE_HWLOC=OFF \
-            -DOPENMP_ENABLE_LIBOMPTARGET=OFF \
-            -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+      - name: "Stage 2: Build shared lib (manylinux2014/glibc Docker)"
+        if: ${{ inputs.use_docker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}:/work" \
+            -v "${HOME}/.cache/sccache:/cache/sccache" \
+            -e SCCACHE_DIR=/cache/sccache \
+            -e ACTIONS_CACHE_SERVICE_V2="${ACTIONS_CACHE_SERVICE_V2}" \
+            -e ACTIONS_RESULTS_URL="${ACTIONS_RESULTS_URL}" \
+            -e ACTIONS_RUNTIME_TOKEN="${ACTIONS_RUNTIME_TOKEN}" \
+            -e SCCACHE_GHA_ENABLED="true" \
+            omp-glibc:latest \
+            /bin/bash -c '
+              set -euo pipefail
 
-          ninja -C build-glibc
+              mkdir -p /work/build-glibc
 
-          # copy glibc-linked .so + aliases into install (alongside musl static .a)
-          cp -P build-glibc/runtime/src/libomp.so install/lib/
-          # restore alias symlinks pointing to glibc .so
-          cd install/lib
-          ln -sf libomp.so libgomp.so 2>/dev/null || true
-          ln -sf libomp.so libiomp5.so 2>/dev/null || true
-          cd -
+              cmake -G Ninja \
+                -S /work/llvm-project/openmp \
+                -B /work/build-glibc \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+                -DCMAKE_INSTALL_PREFIX=/work/install \
+                -DLIBOMP_OMPT_SUPPORT=ON \
+                -DLIBOMP_INSTALL_ALIASES=ON \
+                -DLIBOMP_USE_ITT_NOTIFY=ON \
+                -DLIBOMP_USE_VERSION_SYMBOLS=ON \
+                -DLIBOMP_OMPD_SUPPORT=OFF \
+                -DLIBOMP_ENABLE_ASSERTIONS=OFF \
+                -DLIBOMP_STATS=OFF \
+                -DLIBOMP_OMPT_DEBUG=OFF \
+                -DLIBOMP_USE_DEBUGGER=OFF \
+                -DLIBOMP_OMPX_TASKGRAPH=OFF \
+                -DLIBOMP_FORTRAN_MODULES=OFF \
+                -DLIBOMP_USE_HWLOC=OFF \
+                -DOPENMP_ENABLE_LIBOMPTARGET=OFF \
+                -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+
+              ninja -C /work/build-glibc
+
+              # copy glibc-linked .so into install (alongside musl static .a)
+              cp -P /work/build-glibc/runtime/src/libomp.so /work/install/lib/
+              cd /work/install/lib
+              ln -sf libomp.so libgomp.so
+              ln -sf libomp.so libiomp5.so
+
+              sccache --show-stats || true
+              chown -R "$(stat -c %u:%g /work)" /work/build-glibc /work/install || true
+            '
 
       - name: Configure, build and install (Host - Unix)
         if: ${{ !inputs.use_docker && runner.os != 'Windows' }}
@@ -348,21 +378,14 @@ jobs:
         shell: bash
         run: sccache --show-stats || true
 
-      # docker builds: test static lib inside Alpine, test shared lib on glibc host
-      - name: Test libomp (Alpine Docker — static lib validation)
+      # test shared lib inside glibc Docker (after Stage 2 added the .so)
+      - name: Test libomp (glibc Docker — shared lib validation)
         if: ${{ inputs.use_docker }}
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm -v "${PWD}:/work" omp-builder:latest \
+          docker run --rm -v "${PWD}:/work" omp-glibc:latest \
             python3 /work/scripts/test-omp.py --install-dir /work/install
-
-      - name: Test libomp (host glibc — shared lib validation)
-        if: ${{ inputs.use_docker }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/test-omp.py --install-dir ./install
 
       # host builds: skip compile+run on windows (no cc) and macos (apple clang lacks -fopenmp)
       - name: Test libomp install (Host)
