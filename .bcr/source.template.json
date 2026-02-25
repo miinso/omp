@@ -1,0 +1,5 @@
+{
+    "integrity": "",
+    "strip_prefix": "omp-{VERSION}",
+    "url": "https://github.com/miinso/omp/archive/refs/tags/v{VERSION}.tar.gz"
+}

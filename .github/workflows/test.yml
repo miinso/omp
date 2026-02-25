@@ -1,8 +1,10 @@
 ---
-name: CI
+name: Test
 
 on:
   pull_request:
+    branches: [main, master]
+  push:
     branches: [main, master]
   workflow_dispatch:
 
@@ -11,6 +13,26 @@ permissions:
   actions: read
 
 jobs:
+  # bazel module tests (examples/)
+  bazel-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          bazelisk-version: 1.x
+      - run: cd examples && bazel --bazelrc=/dev/null test //...
+        env:
+          USE_BAZEL_VERSION: 7.6.1
+        shell: bash
+
+  # libomp native builds
   build-linux-x86_64:
     uses: ./.github/workflows/_build-platform.yml
     with:

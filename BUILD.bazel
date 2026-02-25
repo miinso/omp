@@ -1,4 +1,5 @@
-# no targets — consumers use the omp extension directly:
-#   omp = use_extension("@omp//:extensions.bzl", "omp")
-#   use_repo(omp, "libomp")
-# then: deps = ["@libomp//:omp"], copts = OMP_COPTS (from @omp//:defs.bzl)
+alias(
+    name = "omp",
+    actual = "@libomp//:omp",
+    visibility = ["//visibility:public"],
+)

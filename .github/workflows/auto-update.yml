@@ -70,9 +70,9 @@ jobs:
           - Previous: \`${CURRENT}\`
           - Latest: \`${LATEST}\`
 
-          After merge, dispatch release.yml to build and publish:
+          After merge, dispatch build.yml to build and publish:
           \`\`\`
-          gh workflow run release.yml -f version=${LATEST} -f draft=true
+          gh workflow run build.yml -f version=${LATEST} -f draft=true
           \`\`\`
           EOF
           )"

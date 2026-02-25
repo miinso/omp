@@ -6,9 +6,4 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_cc", version = "0.2.4")
 bazel_dep(name = "omp", version = "0.0.0")
 
-# local dev: use parent directory as omp module
 local_path_override(module_name = "omp", path = "..")
-
-# download prebuilt libomp for this platform
-omp = use_extension("@omp//:extensions.bzl", "omp")
-use_repo(omp, "libomp")

@@ -42,26 +42,38 @@ omp-{version}-{triple}/
 ```starlark
 # MODULE.bazel
 bazel_dep(name = "omp", version = "21.1.8")
-
-omp = use_extension("@omp//:extensions.bzl", "omp")
-use_repo(omp, "libomp")
 ```
 
 ```starlark
 # BUILD.bazel
-load("@omp//:defs.bzl", "OMP_COPTS")
-
 cc_binary(
     name = "my_app",
     srcs = ["main.c"],
-    copts = OMP_COPTS,
-    deps = ["@libomp//:omp"],
+    copts = select({
+        "@platforms//os:macos": ["-Xclang", "-fopenmp"],
+        "@platforms//os:windows": ["/openmp"],
+        "//conditions:default": ["-fopenmp"],
+    }),
+    deps = ["@omp"],
 )
 ```
 
-`OMP_COPTS` handles platform differences automatically (Linux: `-fopenmp`,
-macOS: `-Xclang -fopenmp` to bypass Apple Clang's driver restriction,
-Windows: `/openmp`).
+`-Xclang -fopenmp` bypasses Apple Clang's driver (which rejects `-fopenmp`) and
+passes it directly to cc1, which has full OpenMP lowering support.
+
+To use a different LLVM version (checksums are built-in for all released versions):
+
+```starlark
+omp = use_extension("@omp//:extensions.bzl", "omp")
+omp.version(version = "20.1.4")
+```
+
+For unreleased or custom builds, supply sha256 explicitly:
+
+```starlark
+omp = use_extension("@omp//:extensions.bzl", "omp")
+omp.version(version = "22.0.0", sha256 = {"x86_64-unknown-linux-gnu": "abc...", ...})
+```
 
 See `examples/` for test targets.
 
