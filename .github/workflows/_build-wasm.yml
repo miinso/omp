@@ -93,9 +93,13 @@ jobs:
         run: |
           set -euo pipefail
           cd llvm-project
-          echo "applying libomp-wasm-blocktime.patch"
-          git apply ../patches/libomp-wasm-blocktime.patch
-          echo "patch applied successfully"
+          if grep -q 'KMP_OS_EMSCRIPTEN' openmp/runtime/src/kmp.h; then
+            echo "patch already applied (cached source)"
+          else
+            echo "applying libomp-wasm-blocktime.patch"
+            git apply ../patches/libomp-wasm-blocktime.patch
+            echo "patch applied successfully"
+          fi
 
       - name: Resolve emsdk version
         shell: bash
