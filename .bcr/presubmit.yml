@@ -4,6 +4,8 @@ bcr_test_module:
     platform:
       - debian11
       - ubuntu2204
+      - fedora40
+      - ubuntu2204_arm64
       - macos
       - macos_arm64
       - windows
