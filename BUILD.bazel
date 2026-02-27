@@ -1,5 +1,5 @@
 alias(
-    name = "omp",
-    actual = "@libomp//:omp",
+    name = "libomp",
+    actual = "@omp//:omp",
     visibility = ["//visibility:public"],
 )

@@ -40,12 +40,12 @@ def _omp_impl(module_ctx):
         sha256 = dict(_CHECKSUMS[version])
 
     omp_repository(
-        name = "libomp",
+        name = "omp",
         version = version,
         sha256 = sha256,
     )
 
-omp = module_extension(
+libomp = module_extension(
     implementation = _omp_impl,
     tag_classes = {"version": _version_tag},
 )

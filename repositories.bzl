@@ -17,7 +17,7 @@ _BUILD_FILE_CONTENT = """\
 load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
 
 cc_import(
-    name = "omp_import",
+    name = "libomp",
     static_library = select({
         "@platforms//os:windows": None,
         "//conditions:default": "lib/libomp.a",
@@ -38,7 +38,7 @@ cc_import(
 
 cc_library(
     name = "omp",
-    deps = [":omp_import"],
+    deps = [":libomp"],
     includes = ["include"],
     visibility = ["//visibility:public"],
 )

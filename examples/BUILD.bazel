@@ -11,7 +11,7 @@ cc_test(
     name = "hello_omp",
     srcs = ["hello_omp.c"],
     copts = _OMP_COPTS,
-    deps = ["@omp"],
+    deps = ["@libomp"],
 )
 
 # e2e: atomic counter across threads
@@ -19,7 +19,7 @@ cc_test(
     name = "atomic_counter",
     srcs = ["atomic_counter.c"],
     copts = _OMP_COPTS,
-    deps = ["@omp"],
+    deps = ["@libomp"],
     env = {"OMP_NUM_THREADS": "4"},
 )
 
@@ -27,7 +27,7 @@ cc_test(
 cc_test(
     name = "omp_api",
     srcs = ["omp_api.c"],
-    deps = ["@omp"],
+    deps = ["@libomp"],
 )
 
 # link mode: static (libomp.a)
@@ -36,7 +36,7 @@ cc_test(
     srcs = ["hello_omp.c"],
     copts = _OMP_COPTS,
     linkstatic = True,
-    deps = ["@omp"],
+    deps = ["@libomp"],
 )
 
 # link mode: dynamic (libomp.dylib / libomp.so)
@@ -45,5 +45,5 @@ cc_test(
     srcs = ["hello_omp.c"],
     copts = _OMP_COPTS,
     linkstatic = False,
-    deps = ["@omp"],
+    deps = ["@libomp"],
 )
