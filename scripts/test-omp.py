@@ -84,7 +84,7 @@ def check_libs(lib_dir: Path, is_windows: bool) -> bool:
 
 
 def compile_and_run(
-    install_dir, is_windows, compiler=None
+    install_dir, is_windows, compiler=None, static=False
 ) -> bool:
     include_dir = install_dir / "include"
     lib_dir = install_dir / "lib"
@@ -116,17 +116,34 @@ def compile_and_run(
                 omp_flags = ["-Xclang", "-fopenmp"]
             else:
                 omp_flags = ["-fopenmp"]
-            cmd = [
-                compiler,
-                *omp_flags,
-                f"-I{include_dir}",
-                str(src),
-                "-o",
-                str(exe),
-                f"-L{lib_dir}",
-                "-lomp",
-                "-lpthread",
-            ]
+
+            if static:
+                # link libomp.a directly instead of -lomp
+                link_libs = ["-lpthread"]
+                if sys.platform == "linux":
+                    link_libs += ["-ldl", "-lrt", "-lm"]
+                cmd = [
+                    compiler,
+                    *omp_flags,
+                    f"-I{include_dir}",
+                    str(src),
+                    "-o",
+                    str(exe),
+                    str(lib_dir / "libomp.a"),
+                    *link_libs,
+                ]
+            else:
+                cmd = [
+                    compiler,
+                    *omp_flags,
+                    f"-I{include_dir}",
+                    str(src),
+                    "-o",
+                    str(exe),
+                    f"-L{lib_dir}",
+                    "-lomp",
+                    "-lpthread",
+                ]
 
         print(f"  compile: {' '.join(cmd)}")
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
@@ -175,6 +192,9 @@ def main() -> None:
     parser.add_argument(
         "--skip-run", action="store_true", help="skip compile+run test"
     )
+    parser.add_argument(
+        "--no-static", action="store_true", help="skip static link test"
+    )
     args = parser.parse_args()
 
     install_dir = Path(args.install_dir).resolve()
@@ -197,9 +217,15 @@ def main() -> None:
         all_ok = False
 
     if not args.skip_run:
-        print("\n--- compile+link+run ---")
+        print("\n--- compile+link+run (dynamic) ---")
         if not compile_and_run(install_dir, is_windows, args.compiler):
             all_ok = False
+
+        # also test static linking on unix (libomp.a must be present)
+        if not args.no_static and not is_windows and (lib_dir / "libomp.a").exists():
+            print("\n--- compile+link+run (static) ---")
+            if not compile_and_run(install_dir, is_windows, args.compiler, static=True):
+                all_ok = False
 
     print()
     if all_ok:
