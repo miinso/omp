@@ -1,0 +1,21 @@
+diff --git a/openmp/runtime/src/kmp.h b/openmp/runtime/src/kmp.h
+index 36c40abaf1..9fa9e00688 100644
+--- a/openmp/runtime/src/kmp.h
++++ b/openmp/runtime/src/kmp.h
+@@ -1258,7 +1258,16 @@ extern void __kmp_init_target_task();
+   (INT_MAX) /* Must be this for "infinite" setting the work */
+ 
+ /* __kmp_blocktime is in microseconds */
++#if KMP_OS_EMSCRIPTEN
++// pthread_cond_signal latency on wasm is 10-27ms per worker wake,
++// making condvar-based suspend/resume impractical. Spin-wait instead.
++// also, any finite blocktime enters the KMP_NOW()-based timing path on
++// every spin iteration, which itself adds significant overhead on wasm.
++// applications can still park workers explicitly via omp_pause_resource().
++#define KMP_DEFAULT_BLOCKTIME KMP_MAX_BLOCKTIME
++#else
+ #define KMP_DEFAULT_BLOCKTIME (__kmp_is_hybrid_cpu() ? (0) : (200000))
++#endif
+ 
+ #if KMP_USE_MONITOR
+ #define KMP_DEFAULT_MONITOR_STKSIZE ((size_t)(64 * 1024))

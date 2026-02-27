@@ -8,22 +8,25 @@ _DEFAULT_VERSION = "21.1.8"
 # append new versions here as artifacts are built
 _CHECKSUMS = {
     "21.1.8": {
-        "aarch64-unknown-linux-gnu": "d64c6fd4d4f15906bfd2b38960e33f7d8dfd0428c93125d6826e9398111e2f01",
-        "arm64-apple-darwin": "20bf7964a290b3a9cac48f3f940c64176e40ab14a41c83adfade159a9132eb9a",
-        "x86_64-apple-darwin": "e71c4aa6d5c24488a4177a51f1e5e2bb936d6f105db9eb36473991237df3b6d9",
-        "x86_64-pc-windows-msvc": "48b191b99e91445afe052822ad9cce968e5f6ce6949406092fb4886367a1161b",
-        "x86_64-unknown-linux-gnu": "0928dfef5d30ea77e37bca80b9b1c01ffb08dde1450f675170bebce853f7691f",
+        "aarch64-unknown-linux-gnu": "953820d374061eeb99e12178ca637b7960542dc3550af43f6730bc0088166e73",
+        "arm64-apple-darwin": "66fa76a64abe99c147a99ec5d9dac376c3eba7cedda2b50baa329d4e523f3b4f",
+        "wasm32-unknown-emscripten": "b5953c93108f26c4018dc028ca261108fd97729a9e3366a4871fb4ee03661641",
+        "x86_64-apple-darwin": "275e9e25e09362d70f7c8fed44cbfeb7d49844e0b24365e7c8836f8e4bbc726c",
+        "x86_64-pc-windows-msvc": "6f841594f7956f4b8345cdb5e9685f756f1bb89ff8280b39defc6ee8ac63bf00",
+        "x86_64-unknown-linux-gnu": "f7c78d5cff144858bfd2cdb184a96916eb2feee6d0c28843e2d3aadce03c1232",
     },
 }
 
 _version_tag = tag_class(attrs = {
     "version": attr.string(default = _DEFAULT_VERSION),
+    "target_triple": attr.string(default = ""),
     "sha256": attr.string_dict(default = {}),
 })
 
 def _omp_impl(module_ctx):
     version = _DEFAULT_VERSION
     sha256 = {}
+    target_triple = ""
 
     # root module tags take priority over transitive deps
     for mod in module_ctx.modules:
@@ -32,6 +35,8 @@ def _omp_impl(module_ctx):
         for tag in mod.tags.version:
             if tag.version:
                 version = tag.version
+            if tag.target_triple:
+                target_triple = tag.target_triple
             if tag.sha256:
                 sha256 = dict(tag.sha256)
 
@@ -42,6 +47,7 @@ def _omp_impl(module_ctx):
     omp_repository(
         name = "omp",
         version = version,
+        target_triple = target_triple,
         sha256 = sha256,
     )
 

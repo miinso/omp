@@ -13,13 +13,14 @@ permissions:
   actions: read
 
 jobs:
-  # bazel module tests (examples/)
+  # native bazel tests (examples/)
   bazel-test:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-15, windows-latest]
+        bazel: ['7.x', '8.x']
     steps:
       - uses: actions/checkout@v4
       - uses: bazel-contrib/setup-bazel@0.14.0
@@ -27,41 +28,26 @@ jobs:
           bazelisk-cache: true
           repository-cache: true
           bazelisk-version: 1.x
-      - run: cd examples && bazel --bazelrc=/dev/null test //...
+      - run: cd examples && bazel test -c opt //...
         env:
-          USE_BAZEL_VERSION: 7.6.1
+          USE_BAZEL_VERSION: ${{ matrix.bazel }}
         shell: bash
 
-  # libomp native builds
-  build-linux-x86_64:
-    uses: ./.github/workflows/_build-platform.yml
-    with:
-      platform_id: linux-x86_64-ci
-      runner: ubuntu-latest
-      target_triple: x86_64-unknown-linux-gnu
-      artifact_format: tar.gz
-      upload_artifact: false
-      use_docker: true
-      timeout_minutes: 30
-
-  build-macos-x86_64:
-    uses: ./.github/workflows/_build-platform.yml
-    with:
-      platform_id: macos-x86_64-ci
-      runner: macos-15-intel
-      target_triple: x86_64-apple-darwin
-      artifact_format: tar.gz
-      upload_artifact: false
-      use_docker: false
-      timeout_minutes: 30
-
-  build-macos-arm64:
-    uses: ./.github/workflows/_build-platform.yml
-    with:
-      platform_id: macos-arm64-ci
-      runner: macos-15
-      target_triple: arm64-apple-darwin
-      artifact_format: tar.gz
-      upload_artifact: false
-      use_docker: false
-      timeout_minutes: 30
+  # wasm32 bazel test (emsdk + node)
+  bazel-test-wasm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel: ['7.x', '8.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          bazelisk-version: 1.x
+      - run: cd examples && bazel test -c opt //... --config=wasm
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel }}
+        shell: bash

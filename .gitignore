@@ -9,3 +9,9 @@ __pycache__/
 .cache/
 bazel-*/
 MODULE.bazel.lock
+
+# bench artifacts (results, builds, vendored deps)
+bench/results-*/
+bench/bin-*/
+bench/build-*/
+bench/google-benchmark/

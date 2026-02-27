@@ -1,0 +1,12 @@
+# show test output
+test --test_output=all
+
+# platform-specific: exclude wasm by default
+build --enable_platform_specific_config
+build:linux --build_tag_filters=-wasm --test_tag_filters=-wasm
+build:macos --build_tag_filters=-wasm --test_tag_filters=-wasm
+build:windows --build_tag_filters=-wasm --test_tag_filters=-wasm
+
+# --config=wasm: only wasm targets
+build:wasm --noenable_platform_specific_config
+build:wasm --build_tag_filters=wasm --test_tag_filters=wasm

@@ -1,0 +1,218 @@
+---
+name: _build-wasm
+
+on:
+  workflow_call:
+    inputs:
+      artifact_version:
+        required: true
+        type: string
+      llvm_version_override:
+        required: false
+        type: string
+        default: ""
+      upload_artifact:
+        required: false
+        type: boolean
+        default: true
+      timeout_minutes:
+        required: false
+        type: number
+        default: 30
+
+jobs:
+  build:
+    name: build-emscripten-wasm32
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      actions: read
+    env:
+      TARGET_TRIPLE: wasm32-unknown-emscripten
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load version configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+
+          LLVM_VERSION_EFFECTIVE="${LLVM_VERSION:-}"
+          if [ -n "${{ inputs.llvm_version_override }}" ]; then
+            LLVM_VERSION_EFFECTIVE="${{ inputs.llvm_version_override }}"
+          fi
+
+          EFFECTIVE_VERSION="$LLVM_VERSION_EFFECTIVE"
+          if [ -n "${{ inputs.artifact_version }}" ]; then
+            EFFECTIVE_VERSION="${{ inputs.artifact_version }}"
+          fi
+
+          echo "LLVM_VERSION=$LLVM_VERSION_EFFECTIVE" >> "$GITHUB_ENV"
+          echo "EFFECTIVE_VERSION=$EFFECTIVE_VERSION" >> "$GITHUB_ENV"
+
+      - name: Show system information
+        shell: bash
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          echo "CPU cores: $(getconf _NPROCESSORS_ONLN || true)"
+          echo ""
+          echo "=== Memory Information ==="
+          free -h || true
+
+      - name: Restore LLVM source cache
+        id: cache-llvm
+        uses: actions/cache/restore@v4
+        with:
+          path: llvm-project
+          key: llvm-source-${{ env.LLVM_VERSION }}-omp
+
+      - name: Clone LLVM source
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LLVM_TAG="llvmorg-${LLVM_VERSION}"
+          echo "cloning llvm-project @ ${LLVM_TAG}"
+          git clone --depth=1 --branch "$LLVM_TAG" \
+            https://github.com/llvm/llvm-project.git llvm-project
+
+      - name: Save LLVM source cache
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llvm-project
+          key: llvm-source-${{ env.LLVM_VERSION }}-omp
+
+      - name: Apply blocktime patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd llvm-project
+          echo "applying libomp-wasm-blocktime.patch"
+          git apply ../patches/libomp-wasm-blocktime.patch
+          echo "patch applied successfully"
+
+      - name: Resolve emsdk version
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(python3 scripts/resolve_emsdk_for_llvm.py \
+            --map-file emsdk-llvm-map.json \
+            --llvm-version "$LLVM_VERSION")"
+          echo "EMSDK_VERSION=$EMSDK_VERSION"
+          echo "EMSDK_HASH=$EMSDK_HASH"
+          echo "EMSDK_EXPECTED_LLVM_MAJOR=$EMSDK_EXPECTED_LLVM_MAJOR"
+          echo "EMSDK_VERSION=$EMSDK_VERSION" >> "$GITHUB_ENV"
+          echo "EMSDK_HASH=$EMSDK_HASH" >> "$GITHUB_ENV"
+          echo "EMSDK_EXPECTED_LLVM_MAJOR=$EMSDK_EXPECTED_LLVM_MAJOR" >> "$GITHUB_ENV"
+
+      - name: Download and setup emsdk
+        shell: bash
+        run: |
+          set -euo pipefail
+          EMSDK_URL="https://storage.googleapis.com/webassembly/emscripten-releases-builds/linux/${EMSDK_HASH}/wasm-binaries.tar.xz"
+          echo "downloading emsdk from: $EMSDK_URL"
+          curl -fsSL "$EMSDK_URL" -o emsdk.tar.xz
+          mkdir -p emsdk
+          tar -xf emsdk.tar.xz -C emsdk --strip-components=1
+          rm emsdk.tar.xz
+
+          echo "$PWD/emsdk/bin" >> "$GITHUB_PATH"
+          echo "$PWD/emsdk/emscripten" >> "$GITHUB_PATH"
+
+      - name: Configure emscripten
+        shell: bash
+        run: |
+          emcc --generate-config
+          emcc --version
+
+      - name: Build libomp for wasm32
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p build-wasm install
+
+          emcmake cmake -G Ninja \
+            -S llvm-project/openmp \
+            -B build-wasm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+            -DCMAKE_C_FLAGS="-pthread" \
+            -DCMAKE_CXX_FLAGS="-pthread" \
+            -DCMAKE_INSTALL_PREFIX="${PWD}/install" \
+            -DLIBOMP_OMPT_SUPPORT=OFF \
+            -DLIBOMP_INSTALL_ALIASES=OFF \
+            -DLIBOMP_USE_VERSION_SYMBOLS=OFF \
+            -DLIBOMP_OMPD_SUPPORT=OFF \
+            -DLIBOMP_ENABLE_ASSERTIONS=OFF \
+            -DLIBOMP_FORTRAN_MODULES=OFF \
+            -DLIBOMP_USE_HWLOC=OFF \
+            -DOPENMP_ENABLE_LIBOMPTARGET=OFF \
+            -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+
+          ninja -C build-wasm
+          ninja -C build-wasm install
+
+      - name: Test wasm libomp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # verify libomp.a exists
+          ls -la install/lib/libomp.a
+          ls -la install/include/omp.h
+
+          # compile a small OMP test
+          cat > test_omp.c << 'TESTEOF'
+          #include <omp.h>
+          #include <stdio.h>
+          int main() {
+              int sum = 0;
+              #pragma omp parallel for reduction(+:sum)
+              for (int i = 0; i < 100; i++) sum += i;
+              printf("sum=%d threads=%d\n", sum, omp_get_max_threads());
+              return sum == 4950 ? 0 : 1;
+          }
+          TESTEOF
+
+          emcc -fopenmp -pthread \
+            -I install/include \
+            -L install/lib -lomp \
+            test_omp.c -o test_omp.js
+
+          # run with node
+          node test_omp.js
+
+      - name: Copy LICENSE into install
+        shell: bash
+        run: |
+          if [ -f llvm-project/openmp/LICENSE.TXT ]; then
+            cp llvm-project/openmp/LICENSE.TXT install/LICENSE.TXT
+          elif [ -f llvm-project/LICENSE.TXT ]; then
+            cp llvm-project/LICENSE.TXT install/LICENSE.TXT
+          fi
+
+      - name: Package binaries
+        if: ${{ inputs.upload_artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="omp-${EFFECTIVE_VERSION}"
+          mv install "$package_root"
+          package_file="${package_root}-${TARGET_TRIPLE}.tar.gz"
+          tar -czf "$package_file" "$package_root"
+          echo "PACKAGE_FILE=$package_file" >> "$GITHUB_ENV"
+
+      - name: Upload package artifact
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: omp-${{ env.EFFECTIVE_VERSION }}-${{ env.TARGET_TRIPLE }}
+          path: ${{ env.PACKAGE_FILE }}
+          retention-days: 30

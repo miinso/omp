@@ -1,8 +1,13 @@
-load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@emsdk//emscripten_toolchain:wasm_cc_binary.bzl", "wasm_cc_binary")
 
 _OMP_COPTS = select({
     "@platforms//os:macos": ["-Xclang", "-fopenmp"],
-    "@platforms//os:windows": ["/openmp"],
+    # NOTE: /openmp:llvm uses our libomp. windows-host users would
+    # typically use /openmp (msvc's vcomp) and skip the @libomp dep.
+    "@platforms//os:windows": ["/openmp:llvm"],
+    "@platforms//os:emscripten": ["-fopenmp", "-pthread"],
     "//conditions:default": ["-fopenmp"],
 })
 
@@ -46,4 +51,73 @@ cc_test(
     copts = _OMP_COPTS,
     linkstatic = False,
     deps = ["@libomp"],
+)
+
+# scaling: parallel sum benchmark (googlebench)
+cc_test(
+    name = "scaling_test",
+    srcs = ["scaling_test.cc"],
+    copts = _OMP_COPTS,
+    deps = ["@libomp", "@google_benchmark//:benchmark"],
+)
+
+# --- wasm32 targets ---
+
+cc_binary(
+    name = "hello_omp_wasm_bin",
+    srcs = ["hello_omp.c"],
+    copts = ["-fopenmp", "-pthread"],
+    linkopts = ["-pthread"],
+    deps = ["@libomp"],
+    tags = ["wasm"],
+    target_compatible_with = ["@platforms//os:emscripten"],
+)
+
+wasm_cc_binary(
+    name = "hello_omp_wasm",
+    cc_target = ":hello_omp_wasm_bin",
+    outputs = [
+        "hello_omp_wasm_bin.js",
+        "hello_omp_wasm_bin.wasm",
+    ],
+    threads = "emscripten",
+    tags = ["wasm"],
+)
+
+sh_test(
+    name = "wasm_hello_test",
+    srcs = ["run_wasm_test.sh"],
+    args = ["$(rootpaths :hello_omp_wasm)"],
+    data = [":hello_omp_wasm"],
+    tags = ["wasm"],
+)
+
+cc_binary(
+    name = "scaling_test_wasm_bin",
+    srcs = ["scaling_test.cc"],
+    copts = ["-fopenmp", "-pthread"],
+    linkopts = ["-pthread", "-sINITIAL_MEMORY=268435456"],
+    deps = ["@libomp", "@google_benchmark//:benchmark"],
+    tags = ["wasm"],
+    target_compatible_with = ["@platforms//os:emscripten"],
+)
+
+wasm_cc_binary(
+    name = "scaling_test_wasm",
+    cc_target = ":scaling_test_wasm_bin",
+    outputs = [
+        "scaling_test_wasm_bin.js",
+        "scaling_test_wasm_bin.wasm",
+    ],
+    threads = "emscripten",
+    tags = ["wasm"],
+)
+
+sh_test(
+    name = "wasm_scaling_test",
+    srcs = ["run_wasm_test.sh"],
+    args = ["$(rootpaths :scaling_test_wasm)"],
+    data = [":scaling_test_wasm"],
+    tags = ["wasm"],
+    size = "large",
 )
