@@ -1,0 +1,224 @@
+---
+name: Full Battery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.version }} / ${{ matrix.os }} / bazel ${{ matrix.bazel }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '20.1.0'
+          - '20.1.1'
+          - '20.1.2'
+          - '20.1.3'
+          - '20.1.4'
+          - '20.1.5'
+          - '20.1.6'
+          - '20.1.7'
+          - '20.1.8'
+          - '21.1.0'
+          - '21.1.1'
+          - '21.1.2'
+          - '21.1.3'
+          - '21.1.4'
+          - '21.1.5'
+          - '21.1.6'
+          - '21.1.7'
+          - '21.1.8'
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest]
+        bazel: ['7.x', '8.x']
+    env:
+      USE_BAZEL_VERSION: ${{ matrix.bazel }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          bazelisk-version: 1.x
+
+      - name: Configure version ${{ matrix.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ matrix.version }}"
+
+          sums=$(curl -fsSL "https://github.com/miinso/omp/releases/download/v${v}/SHA256SUMS.txt")
+
+          checksums=""
+          while IFS= read -r line; do
+            sha=$(echo "$line" | awk '{print $1}')
+            file=$(echo "$line" | awk '{print $2}')
+            triple=$(echo "$file" | sed "s/^omp-${v}-//; s/\.tar\.gz$//; s/\.zip$//")
+            [ "$triple" = "release-metadata.json" ] && continue
+            checksums="$checksums        \"$triple\": \"$sha\","$'\n'
+          done <<< "$sums"
+
+          cat > extensions.bzl << BZLEOF
+          """Module extension for downloading prebuilt libomp."""
+
+          load(":repositories.bzl", "omp_repository")
+
+          _DEFAULT_VERSION = "$v"
+
+          _CHECKSUMS = {
+              "$v": {
+          $checksums    },
+          }
+
+          _version_tag = tag_class(attrs = {
+              "version": attr.string(default = _DEFAULT_VERSION),
+              "target_triple": attr.string(default = ""),
+              "sha256": attr.string_dict(default = {}),
+          })
+
+          def _omp_impl(module_ctx):
+              version = _DEFAULT_VERSION
+              sha256 = {}
+              target_triple = ""
+              for mod in module_ctx.modules:
+                  if not mod.is_root:
+                      continue
+                  for tag in mod.tags.version:
+                      if tag.version:
+                          version = tag.version
+                      if tag.target_triple:
+                          target_triple = tag.target_triple
+                      if tag.sha256:
+                          sha256 = dict(tag.sha256)
+              if not sha256 and version in _CHECKSUMS:
+                  sha256 = dict(_CHECKSUMS[version])
+              omp_repository(
+                  name = "omp",
+                  version = version,
+                  target_triple = target_triple,
+                  sha256 = sha256,
+              )
+
+          libomp = module_extension(
+              implementation = _omp_impl,
+              tag_classes = {"version": _version_tag},
+          )
+          BZLEOF
+
+          echo "--- extensions.bzl for $v ---"
+          cat extensions.bzl
+
+      - name: Bazel test
+        shell: bash
+        run: cd examples && bazel test -c opt //...
+
+  test-wasm:
+    name: ${{ matrix.version }} / wasm32 / bazel ${{ matrix.bazel }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '20.1.0'
+          - '20.1.1'
+          - '20.1.2'
+          - '20.1.3'
+          - '20.1.4'
+          - '20.1.5'
+          - '20.1.6'
+          - '20.1.7'
+          - '20.1.8'
+          - '21.1.0'
+          - '21.1.1'
+          - '21.1.2'
+          - '21.1.3'
+          - '21.1.4'
+          - '21.1.5'
+          - '21.1.6'
+          - '21.1.7'
+          - '21.1.8'
+        bazel: ['7.x', '8.x']
+    env:
+      USE_BAZEL_VERSION: ${{ matrix.bazel }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          bazelisk-version: 1.x
+
+      - name: Configure version ${{ matrix.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ matrix.version }}"
+
+          sums=$(curl -fsSL "https://github.com/miinso/omp/releases/download/v${v}/SHA256SUMS.txt")
+
+          checksums=""
+          while IFS= read -r line; do
+            sha=$(echo "$line" | awk '{print $1}')
+            file=$(echo "$line" | awk '{print $2}')
+            triple=$(echo "$file" | sed "s/^omp-${v}-//; s/\.tar\.gz$//; s/\.zip$//")
+            [ "$triple" = "release-metadata.json" ] && continue
+            checksums="$checksums        \"$triple\": \"$sha\","$'\n'
+          done <<< "$sums"
+
+          cat > extensions.bzl << BZLEOF
+          """Module extension for downloading prebuilt libomp."""
+
+          load(":repositories.bzl", "omp_repository")
+
+          _DEFAULT_VERSION = "$v"
+
+          _CHECKSUMS = {
+              "$v": {
+          $checksums    },
+          }
+
+          _version_tag = tag_class(attrs = {
+              "version": attr.string(default = _DEFAULT_VERSION),
+              "target_triple": attr.string(default = ""),
+              "sha256": attr.string_dict(default = {}),
+          })
+
+          def _omp_impl(module_ctx):
+              version = _DEFAULT_VERSION
+              sha256 = {}
+              target_triple = ""
+              for mod in module_ctx.modules:
+                  if not mod.is_root:
+                      continue
+                  for tag in mod.tags.version:
+                      if tag.version:
+                          version = tag.version
+                      if tag.target_triple:
+                          target_triple = tag.target_triple
+                      if tag.sha256:
+                          sha256 = dict(tag.sha256)
+              if not sha256 and version in _CHECKSUMS:
+                  sha256 = dict(_CHECKSUMS[version])
+              omp_repository(
+                  name = "omp",
+                  version = version,
+                  target_triple = target_triple,
+                  sha256 = sha256,
+              )
+
+          libomp = module_extension(
+              implementation = _omp_impl,
+              tag_classes = {"version": _version_tag},
+          )
+          BZLEOF
+
+          echo "--- extensions.bzl for $v ---"
+          cat extensions.bzl
+
+      - name: Bazel test (wasm32)
+        shell: bash
+        run: cd examples && bazel test -c opt //... --config=wasm
