@@ -31,6 +31,10 @@ cc_library(
     name = "omp",
     deps = [":libomp"],
     includes = ["include", "wasm32/include"],
+    linkopts = select({
+        "@platforms//os:linux": ["-lpthread", "-ldl", "-lrt"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 '''
