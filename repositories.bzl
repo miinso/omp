@@ -60,7 +60,7 @@ def _detect_host_triple(repository_ctx):
 def _download(repository_ctx, version, triple, sha256, output = ""):
     """Download and extract a release archive."""
     if not sha256:
-        fail("no sha256 for %s @ %s — add to _CHECKSUMS or provide via tag" % (triple, version))
+        fail("no sha256 for %s @ %s -- add to _CHECKSUMS or provide via tag" % (triple, version))
     ext = "zip" if "windows" in triple else "tar.gz"
     filename = "omp-%s-%s.%s" % (version, triple, ext)
     url = "https://github.com/%s/%s/releases/download/v%s/%s" % (
