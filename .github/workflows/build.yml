@@ -231,6 +231,10 @@ jobs:
             --metadata-path artifacts/release-metadata.json \
             --sha256-path artifacts/SHA256SUMS.txt
 
+      - name: Create source tarball
+        shell: bash
+        run: git archive --format=tar.gz --prefix=omp-${{ needs.resolve.outputs.version }}/ ${{ needs.resolve.outputs.tag_name }} > artifacts/omp-${{ needs.resolve.outputs.version }}.tar.gz
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -239,6 +243,7 @@ jobs:
           draft: ${{ needs.resolve.outputs.draft == 'true' }}
           prerelease: false
           files: |
+            artifacts/omp-${{ needs.resolve.outputs.version }}.tar.gz
             artifacts/omp-${{ needs.resolve.outputs.version }}-x86_64-pc-windows-msvc.zip
             artifacts/omp-${{ needs.resolve.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz
             artifacts/omp-${{ needs.resolve.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz
