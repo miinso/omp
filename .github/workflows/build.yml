@@ -58,9 +58,9 @@ jobs:
             TAG_NAME="v${VERSION}"
           fi
 
-          DRAFT="false"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.draft }}" = "true" ]; then
-            DRAFT="true"
+          DRAFT="true"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.draft }}" = "false" ]; then
+            DRAFT="false"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -168,6 +168,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
