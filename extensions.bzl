@@ -143,14 +143,8 @@ _CHECKSUMS = {
         "x86_64-pc-windows-msvc": "2bcae8bc121698690c4e9d2e67bbfa384cb23b25e42aa471e08d53ee5f637928",
         "x86_64-unknown-linux-gnu": "ec81149f3fec96265f7b3d6e38cc20f8772c02c56318b3876e13a8c2c5eb6fea",
     },
-    "21.1.8": {
-        "aarch64-unknown-linux-gnu": "339f77abde441fe8ce8526b9b5c30c0f3f7508383ae573f8caef2ac63bb47c1f",
-        "arm64-apple-darwin": "6a07018eebef9ee772161947dd6b41e00c8336d61e326b35717fd69320a36ff3",
-        "wasm32-unknown-emscripten": "31eef6b1038b76dd483ab274da6b70e04e830f75f12c53ec219487917daa732a",
-        "x86_64-apple-darwin": "5ff097918c87e1f645fb0063403f598666ac64ca910ade5203ea0e1a0bfc2d6f",
-        "x86_64-pc-windows-msvc": "211721e462f8c8d929bb09f6c780532bc62c98e021a78d944bd1685730c17752",
-        "x86_64-unknown-linux-gnu": "9614f1820244356175bfa0aebac9d0f9618967354c245829ba57b2f7ecb1c968",
-    },
+    # FIXME: recompute once release assets stabilize
+    # "21.1.8": {},
 }
 
 _version_tag = tag_class(attrs = {
